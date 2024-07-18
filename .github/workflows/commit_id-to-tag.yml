@@ -1,0 +1,80 @@
+name: Commit_id to Tag and Release Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_id:
+        description: 'Provide the commit ID for tagging and releasing'
+        required: true
+        default: ''
+
+jobs:
+  tag-and-release:
+    environment: tag-and-release
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the code from the repository with full history
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      # Step 2: Extract version from package.json
+      - name: Get package version
+        id: get_version
+        run: |
+          version=$(node -p -e 'require("./package.json").version')
+          echo "version=$version" >> $GITHUB_ENV
+
+      # Step 3: Verify the provided commit ID exists
+      - name: Verify commit ID
+        id: verify_commit
+        run: |
+          if git cat-file -e ${{ github.event.inputs.commit_id }}^{commit}; then
+            echo "Commit exists."
+          else
+            echo "Commit ID ${{ github.event.inputs.commit_id }} does not exist."
+            exit 1
+          fi
+
+      # Step 4: Check if the tag already exists
+      - name: Check for existing tag
+        id: check_tag
+        run: |
+          if git rev-parse "v${{ env.version }}" >/dev/null 2>&1; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Step 5: Exit if the tag already exists
+      - name: Exit if tag exists
+        if: steps.check_tag.outputs.tag_exists == 'true'
+        run: |
+          echo "Tag v${{ env.version }} already exists. Exiting."
+          exit 1
+
+      # Step 6: Create a new release if the tag does not exist
+      - name: Create release
+        if: steps.check_tag.outputs.tag_exists == 'false'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        with:
+          tag_name: v${{ env.version }}
+          release_name: Release v${{ env.version }}
+          draft: false
+          prerelease: false
+
+      # Step 7: Create and push the tag if it does not exist
+      - name: Create and push tag
+        if: steps.check_tag.outputs.tag_exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git tag v${{ env.version }} ${{ github.event.inputs.commit_id }}
+          git push origin v${{ env.version }}
