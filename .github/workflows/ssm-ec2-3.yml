@@ -1,4 +1,4 @@
-name: Deploy to EC2 using SSM (3)
+name: Deploy to EC2 using SSM
 
 on:
   # Manual trigger for the workflow
@@ -39,7 +39,7 @@ jobs:
           fi
 
           command="${{ github.event.inputs.ssmCommand }}"
-          
+
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
