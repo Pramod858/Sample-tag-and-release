@@ -1,7 +1,6 @@
 name: Deploy to EC2 using SSM (3)
 
 on:
-  # Manual trigger for the workflow
   workflow_dispatch:
     inputs:
       instanceTag:
@@ -9,7 +8,7 @@ on:
         required: true
         default: 'MyInstance'
       ssmCommand:
-        description: 'Commands to be executed on the EC2 instance'
+        description: 'Multi-line commands to be executed on the EC2 instance'
         required: true
         default: |
           echo "Default Command"
@@ -33,7 +32,7 @@ jobs:
         id: run-ssm-command
         run: |
           instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
-          
+
           if [ -z "$instance_ids" ]; then
             echo "No instances found with tag: ${{ github.event.inputs.instanceTag }}"
             exit 1
@@ -44,6 +43,6 @@ jobs:
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
-            --parameters '{"commands":["echo $commands | base64 --decode > /tmp/ssm_command.sh && sudo bash /tmp/ssm_command.sh"]}' \
+            --parameters '{"commands":["echo $commands | base64 --decode > /tmp/ssm_command.sh && sudo bash /tmp/ssm_command.sh && sudo cat /tmp/ssm_command.sh && kubectl version --short --client"],"executionTimeout":["3600"]}' \
             --timeout-seconds 600 \
             --comment "Executing provided commands"
