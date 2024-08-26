@@ -5,11 +5,11 @@ on:
   workflow_dispatch:
     inputs:
       instanceTag:
-        description: 'Tag of the EC2 instance to deploy Node.js'
+        description: 'Tag of the EC2 instance'
         required: true
         default: 'MyInstance'
       installCommands:
-        description: 'Commands to install Node.js 20'
+        description: 'Commands to run'
         required: true
         default: 'curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -, sudo apt-get install -y nodejs'
 
