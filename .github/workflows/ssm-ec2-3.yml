@@ -39,14 +39,14 @@ jobs:
           fi
 
           commands=$(echo "${{ github.event.inputs.ssmCommand }}" | base64 -w0)
-          
+
           write_script="echo $commands | base64 --decode > /tmp/ssm_command.sh"
+          show_script="sudo cat /tmp/ssm_command.sh"
           run_script="sudo bash /tmp/ssm_command.sh"
-          show_script="cat /tmp/ssm_command.sh"
 
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
-            --parameters "commands=[${write_script}, ${show_script}, ${run_script}]" \
+            --parameters "commands=['$write_script', '$show_script', '$run_script']" \
             --timeout-seconds 3600 \
             --comment "Executing provided commands in script"
