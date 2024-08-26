@@ -40,9 +40,10 @@ jobs:
 
           command="${{ github.event.inputs.ssmCommand }}"
 
+          # Properly escaping the command
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
-            --parameters "{\"commands\":[\"$command\"]}" \
+            --parameters commands="['$command']" \
             --timeout-seconds 600 \
             --comment "Execute: $command"
