@@ -1,4 +1,4 @@
-name: Deploy to EC2 using SSM (3)
+name: Deploy to EC2 using SSM
 
 on:
   # Manual trigger for the workflow
@@ -9,7 +9,7 @@ on:
         required: true
         default: 'MyInstance'
       ssmCommand:
-        description: 'Command to be executed on the EC2 instance'
+        description: 'Commands to be executed on the EC2 instance'
         required: true
         default: 'echo "Hello World"'
 
@@ -38,11 +38,11 @@ jobs:
             exit 1
           fi
 
-          command=$(echo "${{ github.event.inputs.ssmCommand }}" | sed 's/\"/\\"/g')
+          commands=$(printf %s "${{ github.event.inputs.ssmCommand }}" | jq -R -s -c 'split("\n")')
 
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
-            --parameters commands="[\"$command\"]" \
+            --parameters '{"commands":'"$commands"',"executionTimeout":["3600"]}' \
             --timeout-seconds 600 \
-            --comment "Execute: $command"
+            --comment "Run provided commands"
