@@ -1,4 +1,4 @@
-name: Deploy to EC2 using SSM
+name: Deploy to EC2 using SSM (2)
 
 on:
   # Manual trigger for the workflow
