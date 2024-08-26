@@ -11,7 +11,8 @@ on:
       ssmCommand:
         description: 'Commands to be executed on the EC2 instance'
         required: true
-        default: 'echo "Hello World"'
+        default: |
+          echo "Default Command"
 
 jobs:
   deploy:
@@ -38,11 +39,11 @@ jobs:
             exit 1
           fi
 
-          commands=$(printf %s "${{ github.event.inputs.ssmCommand }}" | jq -R -s -c 'split("\n")')
+          commands=$(echo "${{ github.event.inputs.ssmCommand }}" | base64 -w0)
 
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
-            --parameters '{"commands":'"$commands"',"executionTimeout":["3600"]}' \
+            --parameters '{"commands":["echo $commands | base64 --decode > /tmp/ssm_command.sh && sudo bash /tmp/ssm_command.sh"]}' \
             --timeout-seconds 600 \
-            --comment "Run provided commands"
+            --comment "Executing provided commands"
