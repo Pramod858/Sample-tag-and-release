@@ -28,8 +28,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Send command with SSM to install Node.js 20
-        id: install-node
+      - name: Send command from SSM to EC2
+        id: install
         run: |
           instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
 
