@@ -32,18 +32,17 @@ jobs:
         id: run-ssm-command
         run: |
           instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
-
+          
           if [ -z "$instance_ids" ]; then
             echo "No instances found with tag: ${{ github.event.inputs.instanceTag }}"
             exit 1
           fi
 
-          command="${{ github.event.inputs.ssmCommand }}"
+          command=$(echo "${{ github.event.inputs.ssmCommand }}" | sed 's/\"/\\"/g')
 
-          # Properly escaping the command
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
-            --parameters commands="['$command']" \
+            --parameters commands="[\"$command\"]" \
             --timeout-seconds 600 \
             --comment "Execute: $command"
