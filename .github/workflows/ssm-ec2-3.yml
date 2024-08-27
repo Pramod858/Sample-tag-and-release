@@ -1,4 +1,4 @@
-name: Deploy to EC2 using SSM (3)
+name: Deploy to EC2 using SSM (3)(2)
 
 on:
   workflow_dispatch:
