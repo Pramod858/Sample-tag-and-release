@@ -1,4 +1,4 @@
-name: Deploy to EC2 using SSM (3)
+name: Deploy to EC2 using SSM
 
 on:
   workflow_dispatch:
@@ -53,7 +53,7 @@ jobs:
             --query "Command.CommandId" \
             --output text)
 
-          echo "Command ID: $command_id" | tee /tmp/command-id.txt
+          echo $command_id | tee /tmp/command-id.txt
 
       - name: Check Command Status
         run: |
