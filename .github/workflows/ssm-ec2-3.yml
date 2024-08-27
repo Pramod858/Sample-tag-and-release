@@ -56,13 +56,17 @@ jobs:
         run: |
           command_id=$(cat /tmp/command-id.txt)
 
-          status="InProgress"
-          while [[ "$status" == "InProgress" || "$status" == "Pending" ]]; do
-            sleep 10
+          while true; do
             result=$(aws ssm list-command-invocations --command-id "$command_id" --details --output json)
-            
             status=$(echo $result | jq -r '.[0].StatusDetails')
+
             echo "Current Status: $status"
+
+            if [[ "$status" != "InProgress" && "$status" != "Pending" ]]; then
+              break
+            fi
+
+            sleep 10
           done
 
           if [[ "$status" != "Success" ]]; then
@@ -76,8 +80,13 @@ jobs:
           command_id=$(cat /tmp/command-id.txt)
           instance_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -d '[:space:]')
 
+          echo "Instance ID: $instance_id"
+          echo "Command ID: $command_id"
+
           output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "StandardOutputContent" --output text)
           error_output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "StandardErrorContent" --output text)
 
-          echo -e "Output:\n$output"
-          echo -e "Error Output:\n$error_output"
+          echo "Output:"
+          echo "$output"
+          echo "Error Output:"
+          echo "$error_output"
