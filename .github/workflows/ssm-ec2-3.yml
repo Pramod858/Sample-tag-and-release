@@ -47,13 +47,13 @@ jobs:
           command_id=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
-            --parameters commands=["/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log"] \
+            --parameters "commands=['/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log']" \
             --timeout-seconds 3600 \
             --comment "Executing provided commands in script" \
             --query "Command.CommandId" \
             --output text)
 
-          echo $command_id | tee /tmp/command-id.txt
+          echo $command_id > /tmp/command-id.txt
 
       - name: Check Command Status
         run: |
@@ -65,30 +65,22 @@ jobs:
             result=$(aws ssm list-command-invocations \
               --command-id "$command_id" \
               --details \
-              --query "CommandInvocations[*].{Instance:InstanceId,Status:StatusDetails,Output:StandardOutputContent,ErrorOutput:StandardErrorContent}" \
               --output json)
             
-            status=$(echo $result | jq -r '.[0].Status')
-            output=$(echo $result | jq -r '.[0].Output')
-            error_output=$(echo $result | jq -r '.[0].ErrorOutput')
-
+            status=$(echo $result | jq -r '.[0].StatusDetails')
             echo "Status: $status"
-            
-            if [[ "$status" == "Success" ]]; then
-              echo "Output: $output"
-            fi
-
-            if [[ "$status" == "Failed" ]]; then
-              echo "Error Output: $error_output"
-            fi
           done
 
-          echo "Final Status: $status"
-          echo "Final Output: $output"
-          echo "Final Error Output: $error_output"
+          command_invocation_id=$(echo $result | jq -r '.[0].CommandInvocationId')
 
           if [[ "$status" != "Success" ]]; then
             echo "Command execution failed."
             exit 1
           fi
           echo "Command execution completed successfully."
+
+      - name: Fetch Command Logs
+        run: |
+          instance_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "{StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}" --output json | jq -r '.StandardOutput' 
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "{StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}" --output json | jq -r '.StandardError'
