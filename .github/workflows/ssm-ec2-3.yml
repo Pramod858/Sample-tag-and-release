@@ -31,60 +31,60 @@ jobs:
       - name: Send command with SSM
         id: run-ssm-command
         run: |
+          # Get the instance IDs based on the tag name
           instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
-          
           if [ -z "$instance_ids" ]; then
             echo "No instances found with tag: ${{ github.event.inputs.instanceTag }}"
             exit 1
           fi
 
+          # Create the command script on the fly
           echo "${{ github.event.inputs.ssmCommand }}" > /tmp/ssm_command.sh
           chmod +x /tmp/ssm_command.sh
+          cat /tmp/ssm_command.sh
 
+          # Send the command using AWS SSM
           command_id=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceIds,Values=${instance_ids}" \
-            --parameters commands=["/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log"] \
+            --targets Key=instanceIds,Values=$instance_ids \
+            --parameters commands=[/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log] \
             --timeout-seconds 3600 \
             --comment "Executing provided commands in script" \
             --query "Command.CommandId" \
             --output text)
-          
-          echo $command_id > /tmp/command-id.txt
 
-      - name: Check Command Status
-        run: |
-          command_id=$(cat /tmp/command-id.txt)
+          echo "Command ID: $command_id"
 
+          # Poll to check the command status
           while true; do
-            result=$(aws ssm list-command-invocations --command-id "$command_id" --details --output json)
-            status=$(echo $result | jq -r '.[0].StatusDetails')
-
-            echo "Current Status: $status"
-
-            if [[ "$status" != "InProgress" && "$status" != "Pending" ]]; then
+            result=$(aws ssm list-command-invocations --command-id "$command_id" --details --query "CommandInvocations[*].StatusDetails" --output text)
+            
+            echo "Status: $result"
+            if [[ "$result" != "InProgress" && "$result" != "Pending" ]]; then
               break
             fi
-
             sleep 10
           done
 
-          if [[ "$status" != "Success" ]]; then
-            echo "Command execution failed."
+          # Check final status
+          if [ "$result" != "Success" ]; then
+            echo "Command execution failed with status: $result"
+            aws ssm list-command-invocations --command-id "$command_id" --details --query 'CommandInvocations[*].StandardErrorContent' --output text
             exit 1
           fi
-          echo "Command execution completed successfully."
 
-      - name: Fetch Command Logs
+          echo "Command execution completed successfully"
+          # Display standard output
+          aws ssm list-command-invocations --command-id "$command_id" --details --query 'CommandInvocations[*].StandardOutputContent' --output text
+
+      - name: Print Command Output and Error
         run: |
-          command_id=$(cat /tmp/command-id.txt)
+          # Re-fetch instance ID to avoid any trailing space issues
           instance_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -d '[:space:]')
 
-          echo "Instance ID: $instance_id"
-          echo "Command ID: $command_id"
-
-          output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "StandardOutputContent" --output text)
-          error_output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "StandardErrorContent" --output text)
+          # Fetch final output and error from command invocation
+          output=$(aws ssm list-command-invocations --command-id "$command_id" --query 'CommandInvocations[?InstanceId==`'$instance_id'`].StandardOutputContent' --output text)
+          error_output=$(aws ssm list-command-invocations --command-id "$command_id" --query 'CommandInvocations[?InstanceId==`'$instance_id'`].StandardErrorContent' --output text)
 
           echo "Output:"
           echo "$output"
