@@ -11,7 +11,10 @@ on:
         description: 'Multi-line commands to be executed on the EC2 instance'
         required: true
         default: |
-          echo "Default Command"
+          curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.19.6/2021-01-05/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin
+          kubectl version --short --client
 
 jobs:
   deploy:
@@ -38,7 +41,7 @@ jobs:
             exit 1
           fi
 
-          # Create the command script on the fly
+          # Generate the script with the provided commands
           echo "${{ github.event.inputs.ssmCommand }}" > /tmp/ssm_command.sh
           chmod +x /tmp/ssm_command.sh
           cat /tmp/ssm_command.sh
@@ -47,7 +50,7 @@ jobs:
           command_id=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets Key=instanceIds,Values=$instance_ids \
-            --parameters commands=[/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log] \
+            --parameters commands=["/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log"] \
             --timeout-seconds 3600 \
             --comment "Executing provided commands in script" \
             --query "Command.CommandId" \
@@ -79,12 +82,10 @@ jobs:
 
       - name: Print Command Output and Error
         run: |
-          # Re-fetch instance ID to avoid any trailing space issues
           instance_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -d '[:space:]')
 
-          # Fetch final output and error from command invocation
-          output=$(aws ssm list-command-invocations --command-id "$command_id" --query 'CommandInvocations[?InstanceId==`'$instance_id'`].StandardOutputContent' --output text)
-          error_output=$(aws ssm list-command-invocations --command-id "$command_id" --query 'CommandInvocations[?InstanceId==`'$instance_id'`].StandardErrorContent' --output text)
+          output=$(aws ssm list-command-invocations --command-id "$command_id" --instance-id "$instance_id" --query 'CommandInvocations[*].StandardOutputContent' --output text)
+          error_output=$(aws ssm list-command-invocations --command-id "$command_id" --instance-id "$instance_id" --query 'CommandInvocations[*].StandardErrorContent' --output text)
 
           echo "Output:"
           echo "$output"
