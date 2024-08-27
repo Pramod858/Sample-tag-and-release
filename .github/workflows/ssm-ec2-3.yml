@@ -49,8 +49,8 @@ jobs:
           # Send the command using AWS SSM
           command_id=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --targets Key=instanceIds,Values=$instance_ids \
-            --parameters commands=["/bin/bash ssm_command.sh 2>&1 | tee command.log"] \
+            --targets "Key=instanceIds,Values=$instance_ids" \
+            --parameters "commands=[\"/bin/bash ssm_command.sh\"]" \
             --timeout-seconds 3600 \
             --comment "Executing provided commands in script" \
             --query "Command.CommandId" \
@@ -69,4 +69,29 @@ jobs:
           done
 
           if [ "$result" != "Success" ]; then
-            echo "Command execution
+            echo "Command execution failed with status: $result"
+            aws ssm list-command-invocations --command-id "$command_id" --details --query 'CommandInvocations[*].StandardErrorContent' --output text
+            exit 1
+          fi
+
+          echo "Command execution completed successfully"
+          # Display standard output
+          aws ssm list-command-invocations --command-id "$command_id" --details --query 'CommandInvocations[*].StandardOutputContent' --output text
+
+      - name: Print Command Output and Error
+        run: |
+          instance_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -d '[:space:]')
+
+          echo "Instance ID: $instance_id"
+
+          output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query 'StandardOutputContent' --output text)
+          error_output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query 'StandardErrorContent' --output text)
+
+          echo "Output:"
+          echo "$output"
+          echo "Error Output:"
+          echo "$error_output"
+
+          if [[ -n "$error_output" ]]; then
+            exit 1
+          fi
