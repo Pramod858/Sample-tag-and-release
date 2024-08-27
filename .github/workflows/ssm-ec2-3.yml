@@ -35,22 +35,22 @@ jobs:
         id: run-ssm-command
         run: |
           # Get the instance IDs based on the tag name
-          instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
+          instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr '\n' ' ')
           if [ -z "$instance_ids" ]; then
             echo "No instances found with tag: ${{ github.event.inputs.instanceTag }}"
             exit 1
           fi
 
           # Generate the script with the provided commands
-          echo "${{ github.event.inputs.ssmCommand }}" > /tmp/ssm_command.sh
-          chmod +x /tmp/ssm_command.sh
-          cat /tmp/ssm_command.sh
+          echo "${{ github.event.inputs.ssmCommand }}" > ssm_command.sh
+          chmod +x ssm_command.sh
+          cat ssm_command.sh
 
           # Send the command using AWS SSM
           command_id=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets Key=instanceIds,Values=$instance_ids \
-            --parameters commands=["/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log"] \
+            --parameters commands=["/bin/bash ssm_command.sh 2>&1 | tee command.log"] \
             --timeout-seconds 3600 \
             --comment "Executing provided commands in script" \
             --query "Command.CommandId" \
@@ -60,8 +60,7 @@ jobs:
 
           # Poll to check the command status
           while true; do
-            result=$(aws ssm list-command-invocations --command-id "$command_id" --details --query "CommandInvocations[*].StatusDetails" --output text)
-            
+            result=$(aws ssm list-command-invocations --command-id "$command_id" --details --query "CommandInvocations[*].StatusDetails" --output text | tr '\n' ' ')
             echo "Status: $result"
             if [[ "$result" != "InProgress" && "$result" != "Pending" ]]; then
               break
@@ -69,7 +68,6 @@ jobs:
             sleep 10
           done
 
-          # Check final status
           if [ "$result" != "Success" ]; then
             echo "Command execution failed with status: $result"
             aws ssm list-command-invocations --command-id "$command_id" --details --query 'CommandInvocations[*].StandardErrorContent' --output text
@@ -82,12 +80,16 @@ jobs:
 
       - name: Print Command Output and Error
         run: |
-          instance_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -d '[:space:]')
+          instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -d '[:space,]')
+          IFS=',' read -r -a instance_array <<< "$instance_ids"
 
-          output=$(aws ssm list-command-invocations --command-id "$command_id" --instance-id "$instance_id" --query 'CommandInvocations[*].StandardOutputContent' --output text)
-          error_output=$(aws ssm list-command-invocations --command-id "$command_id" --instance-id "$instance_id" --query 'CommandInvocations[*].StandardErrorContent' --output text)
-
-          echo "Output:"
-          echo "$output"
-          echo "Error Output:"
-          echo "$error_output"
+          for instance_id in "${instance_array[@]}"; do
+            output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query 'StandardOutputContent' --output text)
+            error_output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query 'StandardErrorContent' --output text)
+  
+            echo "Instance ID: $instance_id"
+            echo "Output:"
+            echo "$output"
+            echo "Error Output:"
+            echo "$error_output"
+          done
