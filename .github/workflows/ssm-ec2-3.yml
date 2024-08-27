@@ -44,34 +44,47 @@ jobs:
           cat /tmp/ssm_command.sh
 
           # Run the commands on the EC2 instance
-          aws ssm send-command \
+          command_id=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
             --parameters "commands=['/bin/bash /tmp/ssm_command.sh']" \
             --timeout-seconds 3600 \
             --comment "Executing provided commands in script" \
             --query "Command.CommandId" \
-            --output text | tee /tmp/command-id.txt
+            --output text)
+
+          echo "Command ID: $command_id" | tee /tmp/command-id.txt
 
       - name: Check Command Status
         run: |
           command_id=$(cat /tmp/command-id.txt)
           
-          aws ssm list-command-invocations \
-            --command-id "$command_id" \
-            --details \
-            --query "CommandInvocations[*].{Instance:InstanceId,Status:StatusDetails,Output:StandardOutputContent,ErrorOutput:StandardErrorContent}" \
-            --output json | tee /tmp/command-output.json
+          status="InProgress"
+          while [[ "$status" == "InProgress" || "$status" == "Pending" ]]; do
+            sleep 10
+            result=$(aws ssm list-command-invocations \
+              --command-id "$command_id" \
+              --details \
+              --query "CommandInvocations[*].{Instance:InstanceId,Status:StatusDetails,Output:StandardOutputContent,ErrorOutput:StandardErrorContent}" \
+              --output json)
+            
+            status=$(echo $result | jq -r '.[0].Status')
+            output=$(echo $result | jq -r '.[0].Output')
+            error_output=$(echo $result | jq -r '.[0].ErrorOutput')
 
-          status=$(jq -r '.[0].Status' /tmp/command-output.json)
-          output=$(jq -r '.[0].Output' /tmp/command-output.json)
-          error_output=$(jq -r '.[0].ErrorOutput' /tmp/command-output.json)
+            echo "Status: $status"
+            
+            if [[ "$status" == "Success" ]]; then
+              echo "Output: $output"
+            fi
 
-          echo "Status: $status"
-          echo "Output: $output"
-          [ -n "$error_output" ] && echo "Error Output: $error_output"
+            if [[ "$status" == "Failed" ]]; then
+              echo "Error Output: $error_output"
+            fi
+          done
 
-          if [ "$status" != "Success" ]; then
+          if [[ "$status" != "Success" ]]; then
             echo "Command execution failed."
             exit 1
           fi
+          echo "Command execution completed successfully."
