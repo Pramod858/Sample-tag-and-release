@@ -9,7 +9,104 @@ on:
         default: 'MyInstance'
       ssmCommand:
         description: 'Multi-line commands to be executed on the EC2 instance'
+        required: truename: Deploy to EC2 using SSM
+
+on:
+  workflow_dispatch:
+    inputs:
+      instanceTag:
+        description: 'Tag of the EC2 instance to run the command on'
         required: true
+        default: 'MyInstance'
+      ssmCommand:
+        description: 'Multi-line commands to be executed on the EC2 instance'
+        required: true
+        default: |
+          curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.19.6/2021-01-05/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin
+          kubectl version --short --client
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Send command with SSM
+        id: run-ssm-command
+        run: |
+          # Get the instance IDs based on the tag name
+          instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr '\n' ' ')
+          if [ -z "$instance_ids" ]; then
+            echo "No instances found with tag: ${{ github.event.inputs.instanceTag }}"
+            exit 1
+          fi
+
+          # Generate the script with the provided commands
+          echo "${{ github.event.inputs.ssmCommand }}" > ssm_command.sh
+          chmod +x ssm_command.sh
+          cat ssm_command.sh
+
+          # Send the command using AWS SSM
+          command_id=$(aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceIds,Values=$instance_ids" \
+            --parameters "commands=[\"/bin/bash ssm_command.sh\"]" \
+            --timeout-seconds 3600 \
+            --comment "Executing provided commands in script" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "Command ID: $command_id"
+
+          # Poll to check the command status
+          while true; do
+            result=$(aws ssm list-command-invocations --command-id "$command_id" --details --query "CommandInvocations[*].StatusDetails" --output text | tr '\n' ' ')
+            echo "Status: $result"
+            if [[ "$result" != "InProgress" && "$result" != "Pending" ]]; then
+              break
+            fi
+            sleep 10
+          done
+
+          if [ "$result" != "Success" ]; then
+            echo "Command execution failed with status: $result"
+            aws ssm list-command-invocations --command-id "$command_id" --details --query 'CommandInvocations[*].StandardErrorContent' --output text
+            exit 1
+          fi
+
+          echo "Command execution completed successfully"
+          # Display standard output
+          aws ssm list-command-invocations --command-id "$command_id" --details --query 'CommandInvocations[*].StandardOutputContent' --output text
+
+      - name: Print Command Output and Error
+        run: |
+          instance_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -d '[:space:]')
+
+          echo "Instance ID: $instance_id"
+
+          output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query 'StandardOutputContent' --output text)
+          error_output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query 'StandardErrorContent' --output text)
+
+          echo "Output:"
+          echo "$output"
+          echo "Error Output:"
+          echo "$error_output"
+
+          if [[ -n "$error_output" ]]; then
+            exit 1
+          fi
+
         default: |
           curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.19.6/2021-01-05/bin/linux/amd64/kubectl
           chmod +x ./kubectl
