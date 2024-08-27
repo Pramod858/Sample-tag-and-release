@@ -47,7 +47,7 @@ jobs:
           command_id=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$instance_ids" \
-            --parameters "commands=['/bin/bash /tmp/ssm_command.sh']" \
+            --parameters commands=["/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log"] \
             --timeout-seconds 3600 \
             --comment "Executing provided commands in script" \
             --query "Command.CommandId" \
@@ -82,6 +82,10 @@ jobs:
               echo "Error Output: $error_output"
             fi
           done
+
+          echo "Final Status: $status"
+          echo "Final Output: $output"
+          echo "Final Error Output: $error_output"
 
           if [[ "$status" != "Success" ]]; then
             echo "Command execution failed."
