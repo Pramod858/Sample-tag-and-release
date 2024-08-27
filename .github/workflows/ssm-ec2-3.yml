@@ -1,4 +1,4 @@
-name: Deploy to EC2 using SSM (3)
+name: Deploy to EC2 using SSM
 
 on:
   workflow_dispatch:
@@ -32,46 +32,38 @@ jobs:
         id: run-ssm-command
         run: |
           instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
-
+          
           if [ -z "$instance_ids" ]; then
             echo "No instances found with tag: ${{ github.event.inputs.instanceTag }}"
             exit 1
           fi
 
-          # Create the commands script
           echo "${{ github.event.inputs.ssmCommand }}" > /tmp/ssm_command.sh
           chmod +x /tmp/ssm_command.sh
-          cat /tmp/ssm_command.sh
 
-          # Run the commands on the EC2 instance
           command_id=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceIds,Values=$instance_ids" \
-            --parameters "commands=['/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log']" \
+            --targets "Key=instanceIds,Values=${instance_ids}" \
+            --parameters commands=["/bin/bash /tmp/ssm_command.sh 2>&1 | tee /tmp/command.log"] \
             --timeout-seconds 3600 \
             --comment "Executing provided commands in script" \
             --query "Command.CommandId" \
             --output text)
-
+          
           echo $command_id > /tmp/command-id.txt
 
       - name: Check Command Status
         run: |
           command_id=$(cat /tmp/command-id.txt)
-          
+
           status="InProgress"
           while [[ "$status" == "InProgress" || "$status" == "Pending" ]]; do
             sleep 10
-            result=$(aws ssm list-command-invocations \
-              --command-id "$command_id" \
-              --details \
-              --output json)
+            result=$(aws ssm list-command-invocations --command-id "$command_id" --details --output json)
             
             status=$(echo $result | jq -r '.[0].StatusDetails')
-            echo "Status: $status"
+            echo "Current Status: $status"
           done
-
-          command_invocation_id=$(echo $result | jq -r '.[0].CommandInvocationId')
 
           if [[ "$status" != "Success" ]]; then
             echo "Command execution failed."
@@ -81,6 +73,11 @@ jobs:
 
       - name: Fetch Command Logs
         run: |
-          instance_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
-          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "{StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}" --output json | jq -r '.StandardOutput' 
-          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "{StandardOutput:StandardOutputContent, StandardError:StandardErrorContent}" --output json | jq -r '.StandardError'
+          command_id=$(cat /tmp/command-id.txt)
+          instance_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.instanceTag }}" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -d '[:space:]')
+
+          output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "StandardOutputContent" --output text)
+          error_output=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query "StandardErrorContent" --output text)
+
+          echo -e "Output:\n$output"
+          echo -e "Error Output:\n$error_output"
