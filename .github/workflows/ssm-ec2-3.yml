@@ -1,8 +1,19 @@
-name: AWS SSM Send-Command Example (3)
+name: AWS SSM Send-Command Example
 
 on:
-  push:
-    branches: [master]
+  workflow_dispatch:
+    inputs:
+      instanceId:
+        description: 'ID of the EC2 instance'
+        required: true
+      installCommands:
+        description: 'Commands to run (Separate different commands with a semicolon; and for multiline use | support)'
+        required: true
+        default: |
+          ls -al;
+          echo "Deploying application";
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -;
+          sudo apt-get install -y nodejs
 
 jobs:
   start:
@@ -18,14 +29,9 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          instance-ids: ${{ secrets.INSTANCE_ID }}
-          working-directory: /home/ubuntu/application
+          instance-ids: ${{ github.event.inputs.instanceId }}
           command: |
-            ls -al;
-            echo "Deploying application";
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -;
-            sudo apt-get install -y nodejs
-
+            ${{ github.event.inputs.installCommands }}
           comment: "Executing deployment commands"
 
       # Catch SSM outputs
