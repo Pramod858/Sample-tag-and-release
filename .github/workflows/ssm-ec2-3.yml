@@ -7,7 +7,7 @@ on:
         description: 'ID of the EC2 instance'
         required: true
       installCommands:
-        description: 'Commands to run (Separate different commands with a semicolon; and for multiline use | support)'
+        description: 'Commands to run (Separate different commands with semicolon; for multiline use "|" support)'
         required: true
         default: |
           ls -al && \
@@ -33,7 +33,7 @@ jobs:
       - name: Format Install Commands
         id: format-commands
         run: |
-          echo "${{ github.event.inputs.installCommands }}" | jq -R '. | split("; ")' > commands.json
+          echo '${{ github.event.inputs.installCommands }}' | tr ';' '\n' | jq -sR '[ . | splits("\n") | select(length > 0) ]' > commands.json
           cat commands.json
 
       - name: Send Command via AWS SSM
@@ -64,7 +64,6 @@ jobs:
             --instance-id ${{ github.event.inputs.instanceId }} \
             --region ${{ secrets.AWS_REGION }} \
             --output text --query 'CommandInvocations[0].Status')
-
           echo "COMMAND_STATUS=$COMMAND_STATUS" >> $GITHUB_ENV
 
       - name: Print Status
