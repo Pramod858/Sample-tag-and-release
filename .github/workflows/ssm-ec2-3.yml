@@ -7,7 +7,7 @@ on:
         description: 'ID of the EC2 instance'
         required: true
       installCommands:
-        description: 'Commands to run (separate multiple commands with semicolons ";")'
+        description: 'Commands to run (Separate multiple commands with semicolons ";")'
         required: true
         default: echo "Hello World"
 
@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v2
-      
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -38,14 +38,13 @@ jobs:
           command: |
             ${{ github.event.inputs.installCommands }}
           comment: "Running specified commands"
+          wait-for-command-completion: true
 
       - name: Fetch Command Status and Output
         id: fetch-status-output
         run: |
-          COMMAND_ID=${{ steps.ssm.outputs.command-id }}
-          COMMAND_STATUS=$(aws ssm list-command-invocations --command-id $COMMAND_ID --instance-id ${{ github.event.inputs.instanceId }} --query 'CommandInvocations[0].Status' --output text --region ${{ secrets.AWS_REGION }})
-          COMMAND_OUTPUT=$(aws ssm get-command-invocation --command-id $COMMAND_ID --instance-id ${{ github.event.inputs.instanceId }} --query 'StandardOutputContent' --output text --region ${{ secrets.AWS_REGION }})
-          echo "Command ID: $COMMAND_ID"
+          COMMAND_STATUS=${{ steps.ssm.outputs.command-status }}
+          COMMAND_OUTPUT=$(aws ssm get-command-invocation --command-id ${{ steps.ssm.outputs.command-id }} --instance-id ${{ github.event.inputs.instanceId }} --query 'StandardOutputContent' --output text --region ${{ secrets.AWS_REGION }})
           echo "Command Status: $COMMAND_STATUS"
           echo "Command Output: $COMMAND_OUTPUT"
           echo "COMMAND_STATUS=$COMMAND_STATUS" >> $GITHUB_ENV
@@ -58,7 +57,7 @@ jobs:
         run: echo "The command output is ${{ env.COMMAND_OUTPUT }}"
 
       - name: Verify Command Execution
-        if: env.COMMAND_STATUS != 'Success'
+        if: steps.fetch-status-output.outputs.command-status != 'Success'
         run: |
-          echo "Command did not execute successfully. Status: ${{ env.COMMAND_STATUS }}"
+          echo "Command did not execute successfully. Status: ${{ steps.fetch-status-output.outputs.command-status }}"
           exit 1
