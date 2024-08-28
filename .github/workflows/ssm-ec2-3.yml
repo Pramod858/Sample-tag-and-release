@@ -33,8 +33,8 @@ jobs:
             --instance-ids ${{ github.event.inputs.instanceId }} \
             --document-name "AWS-RunShellScript" \
             --comment "Executing deployment commands" \
-            --parameters '{"commands":["${{ github.event.inputs.installCommands }}"]}' \
-            --cloud-watch-output-config '{"CloudWatchOutputEnabled":true,"CloudWatchLogGroupName":"SSM-Logs"}' \
+            --parameters "commands=${{ github.event.inputs.installCommands }}" \
+            --cloud-watch-output-config "CloudWatchOutputEnabled:true,CloudWatchLogGroupName:SSM-Logs" \
             --region ${{ secrets.AWS_REGION }})
           echo "COMMAND_ID=$(echo $RESPONSE | jq -r '.Command.CommandId')" >> $GITHUB_ENV
 
