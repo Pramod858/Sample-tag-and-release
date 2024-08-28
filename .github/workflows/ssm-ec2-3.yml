@@ -1,23 +1,15 @@
 name: AWS SSM Send-Command Example
 
 on:
-  workflow_dispatch:
-    inputs:
-      instanceId:
-        description: 'ID of the EC2 instance'
-        required: true
-      installCommands:
-        description: 'Commands to run (Separate different commands with &&)'
-        required: true
-        default: ls -al && echo "Hello World" && curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
+  push:
+    branches: [master]
 
 jobs:
   start:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -26,42 +18,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Send Command via AWS SSM
-        id: send-command
-        run: |
-          COMMANDS="${{ github.event.inputs.installCommands }}"
-          RESPONSE=$(aws ssm send-command \
-            --instance-ids ${{ github.event.inputs.instanceId }} \
-            --document-name "AWS-RunShellScript" \
-            --comment "Executing deployment commands" \
-            --parameters commands="$COMMANDS" \
-            --cloud-watch-output-config '{"CloudWatchOutputEnabled":true,"CloudWatchLogGroupName":"SSM-Logs"}' \
-            --region ${{ secrets.AWS_REGION }})
-          echo "COMMAND_ID=$(echo $RESPONSE | jq -r '.Command.CommandId')" >> $GITHUB_ENV
+      - name: AWS SSM Send-Command
+        uses: peterkimzz/aws-ssm-send-command@master
+        id: ssm
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          instance-ids: ${{ secrets.INSTANCE_ID }}
+          working-directory: /home/ubuntu/application
+          command: |
+            ls -al;
+            echo "Hello World";
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -;
+            sudo apt-get install -y nodejs
+          comment: "Running multiline commands"
 
-      - name: Wait for Command Completion
-        id: wait
-        run: |
-          aws ssm wait command-executed \
-            --command-id $COMMAND_ID \
-            --instance-id ${{ github.event.inputs.instanceId }} \
-            --region ${{ secrets.AWS_REGION }}
-
-      - name: Check Command Status
-        id: check-status
-        run: |
-          COMMAND_STATUS=$(aws ssm list-command-invocations \
-            --command-id $COMMAND_ID \
-            --instance-id ${{ github.event.inputs.instanceId }} \
-            --region ${{ secrets.AWS_REGION }} \
-            --output text --query 'CommandInvocations[0].Status')
-          echo "COMMAND_STATUS=$COMMAND_STATUS" >> $GITHUB_ENV
-
-      - name: Print Status
-        run: echo "The command execution status is ${{ env.COMMAND_STATUS }}"
-
-      - name: Verify Command Execution
-        if: env.COMMAND_STATUS != 'Success'
-        run: |
-          echo "Command did not execute successfully. Status: ${{ env.COMMAND_STATUS }}"
-          exit 1
+      - name: Get the outputs
+        run: echo "The Command id is ${{ steps.ssm.outputs.command-id }}"
