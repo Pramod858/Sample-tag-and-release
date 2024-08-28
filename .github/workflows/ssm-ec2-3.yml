@@ -26,25 +26,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: AWS SSM Send-Command
-        uses: peterkimzz/aws-ssm-send-command@master
-        id: ssm
-        with:
-          aws-region: ${{ secrets.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          instance-ids: ${{ github.event.inputs.instanceId }}
-          working-directory: /home/ubuntu/application
-          command: |
-            ${{ github.event.inputs.installCommands }}
-          comment: "Running specified commands"
-          wait-for-command-completion: true
+      - name: Send Command via AWS SSM
+        id: send-command
+        run: |
+          COMMANDS=$(echo '${{ github.event.inputs.installCommands }}' | jq -Rs '.')
+          RESPONSE=$(aws ssm send-command \
+            --instance-ids ${{ github.event.inputs.instanceId }} \
+            --document-name "AWS-RunShellScript" \
+            --comment "Running specified commands" \
+            --parameters commands=["$COMMANDS"] \
+            --cloud-watch-output-config '{"CloudWatchOutputEnabled":true,"CloudWatchLogGroupName":"SSM-Logs"}' \
+            --region ${{ secrets.AWS_REGION }})
+          echo "COMMAND_ID=$(echo $RESPONSE | jq -r '.Command.CommandId')" >> $GITHUB_ENV
 
       - name: Fetch Command Status and Output
         id: fetch-status-output
         run: |
-          COMMAND_STATUS=${{ steps.ssm.outputs.command-status }}
-          COMMAND_OUTPUT=$(aws ssm get-command-invocation --command-id ${{ steps.ssm.outputs.command-id }} --instance-id ${{ github.event.inputs.instanceId }} --query 'StandardOutputContent' --output text --region ${{ secrets.AWS_REGION }})
+          COMMAND_ID=${{ env.COMMAND_ID }}
+          COMMAND_STATUS=$(aws ssm list-command-invocations --command-id $COMMAND_ID --instance-id ${{ github.event.inputs.instanceId }} --query 'CommandInvocations[0].Status' --output text --region ${{ secrets.AWS_REGION }})
+          COMMAND_OUTPUT=$(aws ssm get-command-invocation --command-id $COMMAND_ID --instance-id ${{ github.event.inputs.instanceId }} --query 'StandardOutputContent' --output text --region ${{ secrets.AWS_REGION }})
+          echo "Command ID: $COMMAND_ID"
           echo "Command Status: $COMMAND_STATUS"
           echo "Command Output: $COMMAND_OUTPUT"
           echo "COMMAND_STATUS=$COMMAND_STATUS" >> $GITHUB_ENV
@@ -57,7 +58,7 @@ jobs:
         run: echo "The command output is ${{ env.COMMAND_OUTPUT }}"
 
       - name: Verify Command Execution
-        if: steps.fetch-status-output.outputs.command-status != 'Success'
+        if: env.COMMAND_STATUS != 'Success'
         run: |
-          echo "Command did not execute successfully. Status: ${{ steps.fetch-status-output.outputs.command-status }}"
+          echo "Command did not execute successfully. Status: ${{ env.COMMAND_STATUS }}"
           exit 1
