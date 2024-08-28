@@ -7,9 +7,9 @@ on:
         description: 'ID of the EC2 instance'
         required: true
       installCommands:
-        description: 'Commands to run (Separate different commands with semicolon; for multiline use "|" support)'
+        description: 'Commands to run (Separate different commands with &&)'
         required: true
-        default: ls -al && echo "Deploying application" && curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
+        default: ls -al && echo "Hello World" && curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
 
 jobs:
   start:
@@ -29,12 +29,12 @@ jobs:
       - name: Send Command via AWS SSM
         id: send-command
         run: |
-          ESCAPED_COMMANDS=$(echo '${{ github.event.inputs.installCommands }}' | jq -sRr @json | sed -e 's/^"//' -e 's/"$//')
+          COMMANDS="${{ github.event.inputs.installCommands }}"
           RESPONSE=$(aws ssm send-command \
             --instance-ids ${{ github.event.inputs.instanceId }} \
             --document-name "AWS-RunShellScript" \
             --comment "Executing deployment commands" \
-            --parameters commands=["$ESCAPED_COMMANDS"] \
+            --parameters commands="$COMMANDS" \
             --cloud-watch-output-config '{"CloudWatchOutputEnabled":true,"CloudWatchLogGroupName":"SSM-Logs"}' \
             --region ${{ secrets.AWS_REGION }})
           echo "COMMAND_ID=$(echo $RESPONSE | jq -r '.Command.CommandId')" >> $GITHUB_ENV
