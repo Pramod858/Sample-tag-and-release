@@ -42,6 +42,19 @@ jobs:
           command: |
             ${{ github.event.inputs.installCommands }}
           comment: "Running specified commands"
+          wait-for-command-completion: true
 
-      - name: Get the outputs
-        run: echo "The Command id is ${{ steps.ssm.outputs.command-id }}"
+      - name: Fetch Command Status
+        id: check-status
+        run: |
+          echo "Status: ${{ steps.ssm.outputs.command-status }}"
+        continue-on-error: true
+
+      - name: Print Status
+        run: echo "The command execution status is ${{ steps.check-status.outputs.command-status }}"
+
+      - name: Verify Command Execution
+        if: steps.check-status.outputs.command-status != 'Success'
+        run: |
+          echo "Command did not execute successfully. Status: ${{ steps.check-status.outputs.command-status }}"
+          exit 1
