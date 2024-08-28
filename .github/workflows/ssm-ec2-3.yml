@@ -56,7 +56,7 @@ jobs:
         run: echo "The command output is ${{ env.COMMAND_OUTPUT }}"
 
       - name: Verify Command Execution
-        if: env.COMMAND_STATUS != 'Success'
+        if: steps.fetch-status-output.outputs.command-status != 'Success'
         run: |
-          echo "Command did not execute successfully. Status: ${{ env.COMMAND_STATUS }}"
+          echo "Command did not execute successfully. Status: ${{ steps.fetch-status-output.outputs.command-status }}"
           exit 1
