@@ -18,6 +18,7 @@ on:
 jobs:
   start:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v2
@@ -37,7 +38,14 @@ jobs:
       - name: Get the Command ID
         run: echo "The Command ID is ${{ steps.ssm.outputs.command-id }}"
         id: get-command-id
-      
+
+      - name: Configure AWS Credentials for CLI
+        run: |
+          echo "Configuring AWS CLI credentials"
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ secrets.AWS_REGION }}      
+
       - name: Wait for Command Completion
         id: wait
         run: |
