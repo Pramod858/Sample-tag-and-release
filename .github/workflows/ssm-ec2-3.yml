@@ -10,17 +10,17 @@ on:
         description: 'Commands to run (Separate different commands with a semicolon; and for multiline use | support)'
         required: true
         default: |
-          ls -al;
-          echo "Deploying application";
-          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -;
+          ls -al && \
+          echo "Deploying application" && \
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && \
           sudo apt-get install -y nodejs
 
 jobs:
   start:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout Repository
+        uses: actions/checkout@v2
 
       - name: AWS SSM Send-Command
         uses: peterkimzz/aws-ssm-send-command@v1.1.1
@@ -36,25 +36,34 @@ jobs:
 
       - name: Get the Command ID
         run: echo "The Command ID is ${{ steps.ssm.outputs.command-id }}"
-
-      - name: Wait for Command to Complete
-        id: wait_for_command
+        id: get-command-id
+      
+      - name: Wait for Command Completion
+        id: wait
         run: |
-          command_id=${{ steps.ssm.outputs.command-id }}
-          aws ssm wait command-executed --command-id $command_id --instance-id ${{ github.event.inputs.instanceId }} --region ${{ secrets.AWS_REGION }}          
-          echo "Command $command_id executed successfully."
+          COMMAND_ID=${{ steps.ssm.outputs.command-id }}
+          aws ssm wait command-executed \
+            --command-id $COMMAND_ID \
+            --instance-id ${{ github.event.inputs.instanceId }} \
+            --region ${{ secrets.AWS_REGION }}
 
       - name: Check Command Status
-        id: check_status
+        id: check-status
         run: |
-          command_id=${{ steps.ssm.outputs.command-id }}
-          result=$(aws ssm list-command-invocations --command-id $command_id --details --region ${{ secrets.AWS_REGION }})
-          echo "$result"
-          status=$(echo $result | jq -r '.CommandInvocations[0].Status')
-          output=$(echo $result | jq -r '.CommandInvocations[0].CommandPlugins[0].Output')
-          echo "Command Status: $status"
-          echo "Command Output: $output"
+          COMMAND_ID=${{ steps.ssm.outputs.command-id }}
+          STATUS=$(aws ssm list-command-invocations \
+            --command-id $COMMAND_ID \
+            --instance-id ${{ github.event.inputs.instanceId }} \
+            --region ${{ secrets.AWS_REGION }} \
+            --output text --query 'CommandInvocations[0].Status')
 
-      - name: Display Command Output
+          echo "::set-output name=status::$STATUS"
+
+      - name: Print Status
+        run: echo "The command execution status is ${{ steps.check-status.outputs.status }}"
+
+      - name: Verify Command Execution
+        if: steps.check-status.outputs.status != 'Success'
         run: |
-          echo "The Command Output is: ${{ steps.check_status.outputs.command-output }}"
+          echo "Command did not execute successfully. Status: ${{ steps.check-status.outputs.status }}"
+          exit 1
