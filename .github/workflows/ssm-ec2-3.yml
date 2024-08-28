@@ -34,6 +34,27 @@ jobs:
             ${{ github.event.inputs.installCommands }}
           comment: "Executing deployment commands"
 
-      # Catch SSM outputs
-      - name: Get the outputs
-        run: echo "The Command id is ${{ steps.ssm.outputs.command-id }}"
+      - name: Get the Command ID
+        run: echo "The Command ID is ${{ steps.ssm.outputs.command-id }}"
+
+      - name: Wait for Command to Complete
+        id: wait_for_command
+        run: |
+          command_id=${{ steps.ssm.outputs.command-id }}
+          aws ssm wait command-executed --command-id $command_id --instance-id ${{ github.event.inputs.instanceId }} --region ${{ secrets.AWS_REGION }}          
+          echo "Command $command_id executed successfully."
+
+      - name: Check Command Status
+        id: check_status
+        run: |
+          command_id=${{ steps.ssm.outputs.command-id }}
+          result=$(aws ssm list-command-invocations --command-id $command_id --details --region ${{ secrets.AWS_REGION }})
+          echo "$result"
+          status=$(echo $result | jq -r '.CommandInvocations[0].Status')
+          output=$(echo $result | jq -r '.CommandInvocations[0].CommandPlugins[0].Output')
+          echo "Command Status: $status"
+          echo "Command Output: $output"
+
+      - name: Display Command Output
+        run: |
+          echo "The Command Output is: ${{ steps.check_status.outputs.command-output }}"
