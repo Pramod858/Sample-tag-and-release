@@ -19,14 +19,14 @@ jobs:
 
       - name: Run `packer init`
         id: init
-        run: "packer init ./Packer/packer.json"
+        run: "packer init ./Packer"
 
       - name: Run `packer validate`
         id: validate
-        run: "packer validate ./Packer/packer.json"
+        run: "packer validate ./Packer"
 
       - name: Build Artifact
-        run: packer build -color=false -on-error=abort ./Packer/packer.json
+        run: packer build -color=false -on-error=abort ./Packer
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
